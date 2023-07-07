@@ -3,5 +3,5 @@
 
   
 ## 이게 후론트지
-개재밌군...
+개재밌군...  
 ![중간점검](https://github.com/hyezoprk/threeJS/blob/master/asset/intro.gif)
