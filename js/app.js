@@ -9,6 +9,10 @@ import simVertex from "./shaders/simVertex.glsl";
 
 import texture from "../asset/test.jpg";
 
+function lerp(s, e, t) {
+  return s + (e - s) * t;
+}
+
 export default class Sketch {
   constructor(options) {
     this.container = options.dom;
@@ -16,6 +20,9 @@ export default class Sketch {
 
     this.width = this.container.offsetWidth;
     this.height = this.container.offsetHeight;
+
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
 
     this.renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -34,6 +41,7 @@ export default class Sketch {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
     this.time = 0;
+    this.mouseEvents();
     this.setupFBO();
     this.addObjects();
     this.setupResize();
@@ -42,6 +50,32 @@ export default class Sketch {
 
   setupResize() {
     window.addEventListener("resize", this.resize.bind(this));
+  }
+
+  mouseEvents() {
+    this.planeMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 10),
+      new THREE.MeshBasicMaterial(),
+    );
+
+    this.dummy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 32, 32),
+      new THREE.MeshNormalMaterial(),
+    );
+
+    this.scene.add(this.dummy);
+
+    window.addEventListener("pointermove", (e) => {
+      this.pointer.x = -1 + (e.clientX / window.innerWidth) * 2;
+      this.pointer.y = 1 - (e.clientY / window.innerHeight) * 2;
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+
+      const intersects = this.raycaster.intersectObjects([this.planeMesh]);
+      if (intersects.length > 0) {
+        this.dummy.position.copy(intersects[0].point);
+        this.simMaterial.uniforms.uMousePosition.value = intersects[0].point;
+      }
+    });
   }
 
   setupFBO() {
@@ -53,8 +87,8 @@ export default class Sketch {
     for (let i = 0; i < this.size; i++) {
       for (let j = 0; j < this.size; j++) {
         const index = i * this.size + j;
-        data[4 * index] = Math.random() * 2 - 1;
-        data[4 * index + 1] = Math.random() * 2 - 1;
+        data[4 * index] = lerp(-0.5, 0.5, j / (this.size - 1));
+        data[4 * index + 1] = lerp(-0.5, 0.5, i / (this.size - 1));
         data[4 * index + 2] = 0;
         data[4 * index + 3] = 1;
       }
@@ -83,7 +117,9 @@ export default class Sketch {
     this.simMaterial = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        uTexture: { value: this.positions },
+        uCurrentPosition: { value: this.positions },
+        uOriginalPosition: { value: this.positions },
+        uMousePosition: { value: new THREE.Vector3(0, 0, 0) },
       },
       vertexShader: simVertex,
       fragmentShader: simFragment,
@@ -115,7 +151,7 @@ export default class Sketch {
 
     this.camera.updateProjectionMatrix();
   }
-  // 0xff
+
   addObjects() {
     this.geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(this.number * 3);
@@ -173,7 +209,8 @@ export default class Sketch {
     this.renderTarget1 = tmp;
 
     this.material.uniforms.uTexture.value = this.renderTarget.texture;
-    this.simMaterial.uniforms.uTexture.value = this.renderTarget1.texture;
+    this.simMaterial.uniforms.uCurrentPosition.value =
+      this.renderTarget1.texture;
 
     window.requestAnimationFrame(this.render.bind(this));
   }
