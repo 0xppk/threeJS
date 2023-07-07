@@ -35,7 +35,7 @@ export default class Sketch {
     this.width = this.container.offsetWidth;
     this.height = this.container.offsetHeight;
 
-    this.size = 128;
+    this.size = 128 * 2;
     this.number = this.size * this.size;
 
     this.raycaster = new THREE.Raycaster();
