@@ -1,17 +1,18 @@
 import * as THREE from "three";
 import GUI from "lil-gui";
-
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationREnderer.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
 
 import vertexShader from "./shaders/vertex.glsl";
 import fragmentShader from "./shaders/fragment.glsl";
 
-import simFragment from "./shaders/simFragment.glsl";
+import simFragmentPosition from "./shaders/simFragmentPosition.glsl";
+import simFragmentVelocity from "./shaders/simFragmentVelocity.glsl";
 import simVertex from "./shaders/simVertex.glsl";
 
-import texture from "../asset/test.jpg";
-import t1 from "../asset/logo.png";
-import t2 from "../asset/super.png";
+import suzanne from "../asset/d.glb?url";
 
 function lerp(s, e, t) {
 	return s + (e - s) * t;
@@ -57,19 +58,24 @@ export default class Sketch {
 		this.camera.position.z = 1;
 
 		this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+		this.loader = new GLTFLoader();
+		this.time = 0;
+		this._position = new THREE.Vector3();
 
 		this.setupSettings();
 
-		this.time = 0;
+		Promise.all([this.loader.loadAsync(suzanne)]).then(([model]) => {
+			this.suzanne = model.scene.children[0];
+			this.suzanne.geometry.rotateX(-Math.PI / 2);
+			this.suzanne.material = new THREE.MeshNormalMaterial();
+			this.sampler = new MeshSurfaceSampler(this.suzanne).build();
 
-		Promise.all([
-			this.getPixelDataFromImage(t1),
-			this.getPixelDataFromImage(t2),
-		]).then((texture) => {
-			this.data1 = texture[0];
-			this.data2 = texture[1];
+			// this.scene.add(this.suzanne);
+			this.data1 = this.getVelocitiesOnSphere();
+			this.data2 = this.getVelocitiesOnSphere();
 			this.mouseEvents();
 			this.setupFBO();
+			this.initGPGPU();
 			this.addObjects();
 			this.setupResize();
 			this.render();
@@ -79,6 +85,7 @@ export default class Sketch {
 	setupResize() {
 		window.addEventListener("resize", this.resize.bind(this));
 	}
+
 	setupSettings() {
 		this.settings = {
 			progress: 0,
@@ -88,6 +95,107 @@ export default class Sketch {
 		this.gui.add(this.settings, "progress", 0, 1, 0.01).onChange((val) => {
 			this.simMaterial.uniforms.uProgress.value = val;
 		});
+	}
+
+	getVelocitiesOnSphere() {
+		// create data Texture
+		const data = new Float32Array(4 * this.number);
+		for (let i = 0; i < this.size; i++) {
+			for (let j = 0; j < this.size; j++) {
+				const index = i * this.size + j;
+
+				// generate point on a sphere
+				let theta = Math.random() * Math.PI * 2;
+				let phi = Math.acos(Math.random() * 2 - 1);
+				// let phi = Math.random() * Math.PI
+				let x = Math.sin(phi) * Math.cos(theta);
+				let y = Math.sin(phi) * Math.sin(theta);
+				let z = Math.cos(phi);
+
+				data[4 * index] = 0;
+				data[4 * index + 1] = 0;
+				data[4 * index + 2] = 0;
+				data[4 * index + 3] = 0;
+			}
+		}
+
+		let dataTexture = new THREE.DataTexture(
+			data,
+			this.size,
+			this.size,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		dataTexture.needsUpdate = true;
+
+		return dataTexture;
+	}
+
+	getPointsOnSphere() {
+		const data = new Float32Array(4 * this.number);
+		for (let i = 0; i < this.size; i++) {
+			for (let j = 0; j < this.size; j++) {
+				const index = i * this.size + j;
+
+				// generate point on a sphere
+				let theta = Math.random() * Math.PI * 2;
+				let phi = Math.acos(Math.random() * 2 - 1); //
+				// let phi = Math.random()*Math.PI; //
+				let x = Math.sin(phi) * Math.cos(theta);
+				let y = Math.sin(phi) * Math.sin(theta);
+				let z = Math.cos(phi);
+
+				data[4 * index] = x;
+				data[4 * index + 1] = y;
+				data[4 * index + 2] = z;
+				data[4 * index + 3] = (Math.random() - 0.5) * 0.01;
+			}
+		}
+
+		let dataTexture = new THREE.DataTexture(
+			data,
+			this.size,
+			this.size,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		dataTexture.needsUpdate = true;
+
+		return dataTexture;
+	}
+
+	getPointsOnSuzanne() {
+		const data = new Float32Array(4 * this.number);
+		for (let i = 0; i < this.size; i++) {
+			for (let j = 0; j < this.size; j++) {
+				const index = i * this.size + j;
+
+				this.sampler.sample(this._position);
+				// generate point on a sphere
+				// let theta = Math.random() * Math.PI * 2;
+				// let phi = Math.acos(Math.random() * 2 - 1); //
+				// let phi = Math.random()*Math.PI; //
+				// let x = Math.sin(phi) * Math.cos(theta);
+				// let y = Math.sin(phi) * Math.sin(theta);
+				// let z = Math.cos(phi);
+
+				data[4 * index] = this._position.x;
+				data[4 * index + 1] = this._position.y;
+				data[4 * index + 2] = this._position.z;
+				data[4 * index + 3] = (Math.random() - 0.5) * 0.01;
+			}
+		}
+
+		let dataTexture = new THREE.DataTexture(
+			data,
+			this.size,
+			this.size,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		dataTexture.needsUpdate = true;
+
+		return dataTexture;
 	}
 
 	async getPixelDataFromImage(url) {
@@ -142,8 +250,8 @@ export default class Sketch {
 	}
 
 	mouseEvents() {
-		this.planeMesh = new THREE.Mesh(
-			new THREE.PlaneGeometry(10, 10),
+		this.raycasterMesh = new THREE.Mesh(
+			this.suzanne.geometry,
 			new THREE.MeshBasicMaterial(),
 		);
 
@@ -159,15 +267,81 @@ export default class Sketch {
 			this.pointer.y = 1 - (e.clientY / window.innerHeight) * 2;
 			this.raycaster.setFromCamera(this.pointer, this.camera);
 
-			const intersects = this.raycaster.intersectObjects([this.planeMesh]);
+			const intersects = this.raycaster.intersectObjects([this.raycasterMesh]);
 			if (intersects.length > 0) {
 				this.dummy.position.copy(intersects[0].point);
-				this.simMaterial.uniforms.uMousePosition.value = intersects[0].point;
+				this.simMaterial.uniforms.uMouse.value = intersects[0].point;
+				this.positionUniforms.uMouse.value = intersects[0].point;
+				this.velocityUniforms.uMouse.value = intersects[0].point;
 			}
 		});
 	}
 
+	initGPGPU() {
+		this.gpuCompute = new GPUComputationRenderer(
+			this.size,
+			this.size,
+			this.renderer,
+		);
+
+		this.pointsOnSphere = this.getPointsOnSuzanne();
+
+		this.positionVariable = this.gpuCompute.addVariable(
+			"uCurrentPosition",
+			simFragmentPosition,
+			this.pointsOnSphere,
+		);
+
+		this.velocityVariable = this.gpuCompute.addVariable(
+			"uCurrentVelocity",
+			simFragmentVelocity,
+			this.getVelocitiesOnSphere(),
+		);
+
+		this.gpuCompute.setVariableDependencies(this.positionVariable, [
+			this.positionVariable,
+			this.velocityVariable,
+		]);
+		this.gpuCompute.setVariableDependencies(this.velocityVariable, [
+			this.positionVariable,
+			this.velocityVariable,
+		]);
+
+		this.positionUniforms = this.positionVariable.material.uniforms;
+		this.velocityUniforms = this.velocityVariable.material.uniforms;
+
+		this.positionUniforms.uTime = { value: 0.0 };
+		this.velocityUniforms.uTime = { value: 0.0 };
+		this.positionUniforms.uMouse = { value: new THREE.Vector3(0, 0, 0) };
+		this.velocityUniforms.uMouse = { value: new THREE.Vector3(0, 0, 0) };
+		this.positionUniforms.uOriginalPosition = { value: this.pointsOnSphere };
+		this.velocityUniforms.uOriginalPosition = { value: this.pointsOnSphere };
+
+		this.gpuCompute.init();
+	}
+
 	setupFBO() {
+		// create data Texture
+		const data = new Float32Array(4 * this.number);
+		for (let i = 0; i < this.size; i++) {
+			for (let j = 0; j < this.size; j++) {
+				const index = i * this.size + j;
+				data[4 * index] = lerp(-0.5, 0.5, j / (this.size - 1));
+				data[4 * index + 1] = lerp(-0.5, 0.5, i / (this.size - 1));
+				data[4 * index + 2] = 0;
+				data[4 * index + 3] = 1;
+			}
+		}
+
+		this.positions = new THREE.DataTexture(
+			data,
+			this.size,
+			this.size,
+			THREE.RGBAFormat,
+			THREE.FloatType,
+		);
+		this.positions.needsUpdate = true;
+
 		// create FBO scene
 		this.sceneFBO = new THREE.Scene();
 		this.cameraFBO = new THREE.OrthographicCamera(-1, 1, 1, -1, -2, 2);
@@ -182,7 +356,7 @@ export default class Sketch {
 		this.simMaterial = new THREE.ShaderMaterial({
 			uniforms: {
 				time: { value: 0 },
-				uMousePosition: { value: new THREE.Vector3(0, 0, 0) },
+				uMouse: { value: new THREE.Vector3(0, 0, 0) },
 				uProgress: { value: 0 },
 				uTime: { value: 0 },
 				uCurrentPosition: { value: this.data1 },
@@ -190,7 +364,7 @@ export default class Sketch {
 				uOriginalPosition1: { value: this.data2 },
 			},
 			vertexShader: simVertex,
-			fragmentShader: simFragment,
+			fragmentShader: simFragmentPosition,
 		});
 		this.simMesh = new THREE.Mesh(geo, this.simMaterial);
 		this.sceneFBO.add(this.simMesh);
@@ -268,21 +442,25 @@ export default class Sketch {
 		// this.renderer.render(this.scene, this.camera);
 		// this.renderer.render(this.sceneFBO, this.cameraFBO);
 
-		this.renderer.setRenderTarget(this.renderTarget);
-		this.renderer.render(this.sceneFBO, this.cameraFBO);
+		// this.renderer.setRenderTarget(this.renderTarget);
+		// this.renderer.render(this.sceneFBO, this.cameraFBO);
 
-		this.renderer.setRenderTarget(null);
+		// this.renderer.setRenderTarget(null);
+		this.gpuCompute.compute();
 		this.renderer.render(this.scene, this.camera);
 
 		// swap render targets
-		const tmp = this.renderTarget;
-		this.renderTarget = this.renderTarget1;
-		this.renderTarget1 = tmp;
+		// const tmp = this.renderTarget;
+		// this.renderTarget = this.renderTarget1;
+		// this.renderTarget1 = tmp;
 
-		this.material.uniforms.uTexture.value = this.renderTarget.texture;
-		this.simMaterial.uniforms.uCurrentPosition.value =
-			this.renderTarget1.texture;
-		this.simMaterial.uniforms.uTime.value = this.time;
+		this.material.uniforms.uTexture.value =
+			this.gpuCompute.getCurrentRenderTarget(this.positionVariable).texture;
+		this.positionUniforms.uTime.value = this.time;
+
+		// this.simMaterial.uniforms.uCurrentPosition.value =
+		// this.renderTarget1.texture;
+		// this.simMaterial.uniforms.uTime.value = this.time;
 
 		window.requestAnimationFrame(this.render.bind(this));
 	}
