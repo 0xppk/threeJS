@@ -184,6 +184,7 @@ export default class Sketch {
 				time: { value: 0 },
 				uMousePosition: { value: new THREE.Vector3(0, 0, 0) },
 				uProgress: { value: 0 },
+				uTime: { value: 0 },
 				uCurrentPosition: { value: this.data1 },
 				uOriginalPosition: { value: this.data1 },
 				uOriginalPosition1: { value: this.data2 },
@@ -281,6 +282,7 @@ export default class Sketch {
 		this.material.uniforms.uTexture.value = this.renderTarget.texture;
 		this.simMaterial.uniforms.uCurrentPosition.value =
 			this.renderTarget1.texture;
+		this.simMaterial.uniforms.uTime.value = this.time;
 
 		window.requestAnimationFrame(this.render.bind(this));
 	}
