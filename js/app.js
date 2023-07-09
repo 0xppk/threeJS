@@ -1,18 +1,19 @@
 import * as THREE from "three";
 import GUI from "lil-gui";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationREnderer.js";
+import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationRenderer.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
 
-import vertexShader from "./shaders/vertex.glsl";
 import fragmentShader from "./shaders/fragment.glsl";
+import vertexShader from "./shaders/vertex.glsl";
+import vertexShaderInstanced from "./shaders/vertexInstanced.glsl";
 
 import simFragmentPosition from "./shaders/simFragmentPosition.glsl";
 import simFragmentVelocity from "./shaders/simFragmentVelocity.glsl";
 import simVertex from "./shaders/simVertex.glsl";
 
-import suzanne from "../asset/d.glb?url";
+import suzanne from "../asset/suzanne.glb?url";
 
 function lerp(s, e, t) {
 	return s + (e - s) * t;
@@ -30,14 +31,14 @@ function loadImage(path) {
 
 export default class Sketch {
 	constructor(options) {
+		this.size = 128;
+		this.number = this.size * this.size;
+
 		this.container = options.dom;
 		this.scene = new THREE.Scene();
 
 		this.width = this.container.offsetWidth;
 		this.height = this.container.offsetHeight;
-
-		this.size = 128 * 4;
-		this.number = this.size * this.size;
 
 		this.raycaster = new THREE.Raycaster();
 		this.pointer = new THREE.Vector2();
@@ -422,15 +423,34 @@ export default class Sketch {
 				time: { value: 0 },
 				// uTexture: { value: new THREE.TextureLoader().load(texture) },
 				uTexture: { value: this.positions },
+				uVelocity: { value: null },
 			},
-			vertexShader: vertexShader,
+			vertexShader: vertexShaderInstanced,
 			fragmentShader: fragmentShader,
-			depthWrite: false,
-			depthTest: false,
-			transparent: true,
+			// depthWrite: false,
+			// depthTest: false,
+			// transparent: true,
 		});
 
-		this.mesh = new THREE.Points(this.geometry, this.material);
+		// this.mesh = new THREE.Points(this.geometry, this.material);
+		this.geometryInstanced = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+		this.mesh = new THREE.InstancedMesh(
+			this.geometryInstanced,
+			this.material,
+			this.number,
+		);
+		let uvInstanced = new Float32Array(this.number * 2);
+		for (let i = 0; i < this.size; i++) {
+			for (let j = 0; j < this.size; j++) {
+				const index = i * this.size + j;
+				uvInstanced[2 * index] = j / (this.size - 1);
+				uvInstanced[2 * index + 1] = i / (this.size - 1);
+			}
+		}
+		this.geometryInstanced.setAttribute(
+			"uvRef",
+			new THREE.InstancedBufferAttribute(uvInstanced, 2),
+		);
 		this.scene.add(this.mesh);
 	}
 
@@ -456,6 +476,8 @@ export default class Sketch {
 
 		this.material.uniforms.uTexture.value =
 			this.gpuCompute.getCurrentRenderTarget(this.positionVariable).texture;
+		this.material.uniforms.uVelocity.value =
+			this.gpuCompute.getCurrentRenderTarget(this.velocityVariable).texture;
 		this.positionUniforms.uTime.value = this.time;
 
 		// this.simMaterial.uniforms.uCurrentPosition.value =
