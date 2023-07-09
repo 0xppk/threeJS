@@ -14,6 +14,7 @@ import simFragmentVelocity from "./shaders/simFragmentVelocity.glsl";
 import simVertex from "./shaders/simVertex.glsl";
 
 import suzanne from "../asset/suzanne.glb?url";
+import matcap from "../asset/matcap1.png";
 
 function lerp(s, e, t) {
 	return s + (e - s) * t;
@@ -31,7 +32,7 @@ function loadImage(path) {
 
 export default class Sketch {
 	constructor(options) {
-		this.size = 128;
+		this.size = 256 * 2;
 		this.number = this.size * this.size;
 
 		this.container = options.dom;
@@ -424,6 +425,7 @@ export default class Sketch {
 				// uTexture: { value: new THREE.TextureLoader().load(texture) },
 				uTexture: { value: this.positions },
 				uVelocity: { value: null },
+				uMatcap: { value: new THREE.TextureLoader().load(matcap) },
 			},
 			vertexShader: vertexShaderInstanced,
 			fragmentShader: fragmentShader,
