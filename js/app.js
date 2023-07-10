@@ -47,7 +47,7 @@ export default class Sketch {
 		this.renderer = new THREE.WebGLRenderer({
 			alpha: true,
 		});
-		this.renderer.setClearColor(0x222222, 1);
+		this.renderer.setClearColor(0xffffff, 1);
 		this.renderer.setSize(this.width, this.height);
 		this.container.appendChild(this.renderer.domElement);
 
@@ -490,6 +490,6 @@ export default class Sketch {
 	}
 }
 
-new Sketch({
-	dom: document.getElementById("container"),
-});
+// new Sketch({
+// 	dom: document.getElementById("container"),
+// });
