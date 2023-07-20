@@ -37,11 +37,11 @@ void main() {
     }
 
     // life span of a particle
-    float lifespan = 10.;
+    float lifespan = 10.0;
     float age = mod(uTime + lifespan * offset, lifespan);
     if( age < 0.1 ) {
         velocity = vec2(0.0, 0.001);
-        position.xy += velocity;
+        position.xy = finalOriginal;
     }
 
     position.xy += velocity;
