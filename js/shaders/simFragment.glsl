@@ -18,7 +18,7 @@ void main() {
 
     // particle attraction to shape force
     vec2 direction = normalize(finalOriginal - position);
-    float dist = length(finalOriginal - position);
+    float dist = distance(finalOriginal, position);
     if( dist > 0.01 ) {
         velocity += direction * 0.0001;
     }
