@@ -32,6 +32,7 @@ const loadImage = (path) => {
 export default class Sketch {
   constructor(options) {
     this.init = false;
+    this.currentParticles = 0;
     this.size = 64;
     this.number = this.size * this.size;
     this.container = options.dom;
@@ -234,7 +235,7 @@ export default class Sketch {
     this.cameraFBO.position.z = 1;
     this.cameraFBO.lookAt(new THREE.Vector3(0));
 
-    const geo = new THREE.BufferGeometry();
+    this.geo = new THREE.BufferGeometry();
     let pos = new Float32Array(this.number * 3);
     let uv = new Float32Array(this.number * 2);
     for (let i = 0; i < this.size; i++) {
@@ -249,10 +250,10 @@ export default class Sketch {
         uv[2 * index + 1] = i / (this.size - 1);
       }
     }
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    this.geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 
-    // geo.setDrawRange(3, 10);
+    // this.geo.setDrawRange(3, 10);
 
     this.simMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -268,7 +269,7 @@ export default class Sketch {
       vertexShader: simVertex,
       fragmentShader: simFragment,
     });
-    this.simMesh = new THREE.Points(geo, this.simMaterial);
+    this.simMesh = new THREE.Points(this.geo, this.simMaterial);
     this.sceneFBO.add(this.simMesh);
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
@@ -363,24 +364,56 @@ export default class Sketch {
     // ! raf loop으로부터 한번만 실행되길 원하는 코드
     if (!this.init) {
       this.init = true;
-      this.simMaterial.uniforms.uRenderMode.value = 1;
-      this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, -1, 0);
 
-      this.renderer.setRenderTarget(this.directions);
-      this.renderer.render(this.sceneFBO, this.cameraFBO);
-      this.simMaterial.uniforms.uDirections.value = this.directions.texture;
+      // DIRECTIONS
+      // this.simMaterial.uniforms.uRenderMode.value = 1;
+      // this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, 1, 0);
+      // this.renderer.setRenderTarget(this.directions);
+      // this.renderer.render(this.sceneFBO, this.cameraFBO);
+      // this.simMaterial.uniforms.uDirections.value = this.directions.texture;
 
+      // POSITIONS
       this.simMaterial.uniforms.uRenderMode.value = 2;
+      this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0);
       this.renderer.setRenderTarget(this.initPos);
       this.renderer.render(this.sceneFBO, this.cameraFBO);
+      this.simMaterial.uniforms.uCurrentPosition.value = this.initPos.texture;
     }
 
     this.material.uniforms.time.value = this.time;
 
     // Simulate 렌더링
+    this.simMaterial.uniforms.uDirections.value = this.directions.texture;
     this.simMaterial.uniforms.uRenderMode.value = 0;
+    this.geo.setDrawRange(0, this.number);
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.sceneFBO, this.cameraFBO);
+
+    // EMITTER 렌더링 시작
+    let emit = 5;
+    this.geo.setDrawRange(this.currentParticles, emit);
+    this.renderer.autoClear = false;
+
+    // DIRECTIONS
+    this.simMaterial.uniforms.uRenderMode.value = 1;
+    this.simMaterial.uniforms.uDirections.value = null;
+    this.simMaterial.uniforms.uCurrentPosition.value = null;
+    this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, 1, 0);
+    this.renderer.setRenderTarget(this.directions);
+    this.renderer.render(this.sceneFBO, this.cameraFBO);
+
+    // POSITIONS
+    this.simMaterial.uniforms.uRenderMode.value = 2;
+    this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, 0, 0);
+    this.renderer.setRenderTarget(this.renderTarget);
+    this.renderer.render(this.sceneFBO, this.cameraFBO);
+    this.simMaterial.uniforms.uCurrentPosition.value = this.initPos.texture;
+
+    this.currentParticles += emit;
+    if (this.currentParticles > this.number) {
+      this.currentParticles = 0;
+    }
+    this.renderer.autoClear = true;
 
     // 실제 렌더링
     this.renderer.setRenderTarget(null);
