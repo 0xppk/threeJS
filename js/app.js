@@ -1,40 +1,39 @@
-import * as THREE from "three";
-import GUI from "lil-gui";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationRenderer.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-import fragmentShader from "./shaders/fragment.glsl";
-import vertexShader from "./shaders/vertex.glsl";
-import vertexShaderInstanced from "./shaders/vertexInstanced.glsl";
+import vertexShader from './shaders/vertex.glsl';
+import fragmentShader from './shaders/fragment.glsl';
 
-import simFragmentPosition from "./shaders/simFragmentPosition.glsl";
-import simFragmentVelocity from "./shaders/simFragmentVelocity.glsl";
-import simVertex from "./shaders/simVertex.glsl";
+import simFragment from './shaders/simFragment.glsl';
+import simVertex from './shaders/simVertex.glsl';
+import GUI from 'lil-gui';
 
-import suzanne from "../asset/suzanne.glb?url";
-import matcap from "../asset/matcap1.png";
+import t1 from '../asset/logo.png';
+import t2 from '../asset/super.png';
 
-function lerp(s, e, t) {
-  return s + (e - s) * t;
+function lerp(a, b, n) {
+  return (1 - n) * a + n * b;
 }
 
-function loadImage(path) {
+const loadImage = (path) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    img.crossOrigin = 'Anonymous'; // to avoid CORS if used with Canvas
     img.src = path;
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e);
+    img.onload = () => {
+      resolve(img);
+    };
+    img.onerror = (e) => {
+      reject(e);
+    };
   });
-}
+};
 
 export default class Sketch {
   constructor(options) {
-    this.size = 256 * 2;
+    this.init = false;
+    this.size = 64;
     this.number = this.size * this.size;
-
     this.container = options.dom;
     this.scene = new THREE.Scene();
 
@@ -46,8 +45,9 @@ export default class Sketch {
 
     this.renderer = new THREE.WebGLRenderer({
       alpha: true,
+      antialias: true,
     });
-    this.renderer.setClearColor(0xffffff, 1);
+    this.renderer.setClearColor(0x222222, 1);
     this.renderer.setSize(this.width, this.height);
     this.container.appendChild(this.renderer.domElement);
 
@@ -57,35 +57,25 @@ export default class Sketch {
       0.01,
       10,
     );
-    this.camera.position.z = 1;
+    this.camera.position.z = 2;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.loader = new GLTFLoader();
+
     this.time = 0;
-    this._position = new THREE.Vector3();
-
     this.setupSettings();
-
-    Promise.all([this.loader.loadAsync(suzanne)]).then(([model]) => {
-      this.suzanne = model.scene.children[0];
-      this.suzanne.geometry.rotateX(-Math.PI / 2);
-      this.suzanne.material = new THREE.MeshNormalMaterial();
-      this.sampler = new MeshSurfaceSampler(this.suzanne).build();
-
-      // this.scene.add(this.suzanne);
-      this.data1 = this.getVelocitiesOnSphere();
-      this.data2 = this.getVelocitiesOnSphere();
+    Promise.all([
+      this.getPixelDataFromImage(t1),
+      this.getPixelDataFromImage(t2),
+    ]).then((textures) => {
+      this.data1 = this.getPointsOnSphere();
+      this.data2 = this.getPointsOnSphere();
+      this.getPixelDataFromImage(t1);
       this.mouseEvents();
       this.setupFBO();
-      this.initGPGPU();
       this.addObjects();
       this.setupResize();
       this.render();
     });
-  }
-
-  setupResize() {
-    window.addEventListener("resize", this.resize.bind(this));
   }
 
   setupSettings() {
@@ -94,43 +84,9 @@ export default class Sketch {
     };
 
     this.gui = new GUI();
-    this.gui.add(this.settings, "progress", 0, 1, 0.01).onChange((val) => {
+    this.gui.add(this.settings, 'progress', 0, 1, 0.01).onChange((val) => {
       this.simMaterial.uniforms.uProgress.value = val;
     });
-  }
-
-  getVelocitiesOnSphere() {
-    // create data Texture
-    const data = new Float32Array(4 * this.number);
-    for (let i = 0; i < this.size; i++) {
-      for (let j = 0; j < this.size; j++) {
-        const index = i * this.size + j;
-
-        // generate point on a sphere
-        let theta = Math.random() * Math.PI * 2;
-        let phi = Math.acos(Math.random() * 2 - 1);
-        // let phi = Math.random() * Math.PI
-        let x = Math.sin(phi) * Math.cos(theta);
-        let y = Math.sin(phi) * Math.sin(theta);
-        let z = Math.cos(phi);
-
-        data[4 * index] = 0;
-        data[4 * index + 1] = 0;
-        data[4 * index + 2] = 0;
-        data[4 * index + 3] = 0;
-      }
-    }
-
-    let dataTexture = new THREE.DataTexture(
-      data,
-      this.size,
-      this.size,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
-    dataTexture.needsUpdate = true;
-
-    return dataTexture;
   }
 
   getPointsOnSphere() {
@@ -166,61 +122,25 @@ export default class Sketch {
     return dataTexture;
   }
 
-  getPointsOnSuzanne() {
-    const data = new Float32Array(4 * this.number);
-    for (let i = 0; i < this.size; i++) {
-      for (let j = 0; j < this.size; j++) {
-        const index = i * this.size + j;
-
-        this.sampler.sample(this._position);
-        // generate point on a sphere
-        // let theta = Math.random() * Math.PI * 2;
-        // let phi = Math.acos(Math.random() * 2 - 1); //
-        // let phi = Math.random()*Math.PI; //
-        // let x = Math.sin(phi) * Math.cos(theta);
-        // let y = Math.sin(phi) * Math.sin(theta);
-        // let z = Math.cos(phi);
-
-        data[4 * index] = this._position.x;
-        data[4 * index + 1] = this._position.y;
-        data[4 * index + 2] = this._position.z;
-        data[4 * index + 3] = (Math.random() - 0.5) * 0.01;
-      }
-    }
-
-    let dataTexture = new THREE.DataTexture(
-      data,
-      this.size,
-      this.size,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
-    dataTexture.needsUpdate = true;
-
-    return dataTexture;
-  }
-
   async getPixelDataFromImage(url) {
     let img = await loadImage(url);
     let width = 200;
-    let canvas = document.createElement("canvas");
+    let canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = width;
-    let ctx = canvas.getContext("2d");
+    let ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0, width, width);
-
     let canvasData = ctx.getImageData(0, 0, width, width).data;
+
     let pixels = [];
     for (let i = 0; i < canvasData.length; i += 4) {
       let x = (i / 4) % width;
       let y = Math.floor(i / 4 / width);
-
       if (canvasData[i] < 5) {
         pixels.push({ x: x / width - 0.5, y: 0.5 - y / width });
       }
     }
 
-    // create data Texture
     const data = new Float32Array(4 * this.number);
     for (let i = 0; i < this.size; i++) {
       for (let j = 0; j < this.size; j++) {
@@ -228,8 +148,8 @@ export default class Sketch {
         let randomPixel = pixels[Math.floor(Math.random() * pixels.length)];
         if (Math.random() > 0.9) {
           randomPixel = {
-            x: (Math.random() - 0.5) * 3,
-            y: (Math.random() - 0.5) * 3,
+            x: 3 * (Math.random() - 0.5),
+            y: 3 * (Math.random() - 0.5),
           };
         }
         data[4 * index] = randomPixel.x + (Math.random() - 0.5) * 0.01;
@@ -252,74 +172,30 @@ export default class Sketch {
   }
 
   mouseEvents() {
-    this.raycasterMesh = new THREE.Mesh(
-      this.suzanne.geometry,
+    this.planeMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 30, 30),
       new THREE.MeshBasicMaterial(),
     );
-
     this.dummy = new THREE.Mesh(
       new THREE.SphereGeometry(0.01, 32, 32),
       new THREE.MeshNormalMaterial(),
     );
-
     this.scene.add(this.dummy);
-
-    window.addEventListener("pointermove", (e) => {
-      this.pointer.x = -1 + (e.clientX / window.innerWidth) * 2;
-      this.pointer.y = 1 - (e.clientY / window.innerHeight) * 2;
+    window.addEventListener('mousemove', (e) => {
+      this.pointer.x = (e.clientX / this.width) * 2 - 1;
+      this.pointer.y = -(e.clientY / this.height) * 2 + 1;
       this.raycaster.setFromCamera(this.pointer, this.camera);
 
-      const intersects = this.raycaster.intersectObjects([this.raycasterMesh]);
+      const intersects = this.raycaster.intersectObjects([this.planeMesh]);
       if (intersects.length > 0) {
         this.dummy.position.copy(intersects[0].point);
         this.simMaterial.uniforms.uMouse.value = intersects[0].point;
-        this.positionUniforms.uMouse.value = intersects[0].point;
-        this.velocityUniforms.uMouse.value = intersects[0].point;
       }
     });
   }
 
-  initGPGPU() {
-    this.gpuCompute = new GPUComputationRenderer(
-      this.size,
-      this.size,
-      this.renderer,
-    );
-
-    this.pointsOnSphere = this.getPointsOnSuzanne();
-
-    this.positionVariable = this.gpuCompute.addVariable(
-      "uCurrentPosition",
-      simFragmentPosition,
-      this.pointsOnSphere,
-    );
-
-    this.velocityVariable = this.gpuCompute.addVariable(
-      "uCurrentVelocity",
-      simFragmentVelocity,
-      this.getVelocitiesOnSphere(),
-    );
-
-    this.gpuCompute.setVariableDependencies(this.positionVariable, [
-      this.positionVariable,
-      this.velocityVariable,
-    ]);
-    this.gpuCompute.setVariableDependencies(this.velocityVariable, [
-      this.positionVariable,
-      this.velocityVariable,
-    ]);
-
-    this.positionUniforms = this.positionVariable.material.uniforms;
-    this.velocityUniforms = this.velocityVariable.material.uniforms;
-
-    this.positionUniforms.uTime = { value: 0.0 };
-    this.velocityUniforms.uTime = { value: 0.0 };
-    this.positionUniforms.uMouse = { value: new THREE.Vector3(0, 0, 0) };
-    this.velocityUniforms.uMouse = { value: new THREE.Vector3(0, 0, 0) };
-    this.positionUniforms.uOriginalPosition = { value: this.pointsOnSphere };
-    this.velocityUniforms.uOriginalPosition = { value: this.pointsOnSphere };
-
-    this.gpuCompute.init();
+  setupResize() {
+    window.addEventListener('resize', this.resize.bind(this));
   }
 
   setupFBO() {
@@ -346,32 +222,70 @@ export default class Sketch {
 
     // create FBO scene
     this.sceneFBO = new THREE.Scene();
-    this.cameraFBO = new THREE.OrthographicCamera(-1, 1, 1, -1, -2, 2);
+    let viewArea = this.size / 2 + 0.01;
+    this.cameraFBO = new THREE.OrthographicCamera(
+      -viewArea,
+      viewArea,
+      viewArea,
+      -viewArea,
+      -2,
+      2,
+    );
     this.cameraFBO.position.z = 1;
-    this.cameraFBO.lookAt(new THREE.Vector3(0, 0, 0));
+    this.cameraFBO.lookAt(new THREE.Vector3(0));
 
-    let geo = new THREE.PlaneGeometry(2, 2, 2, 2);
-    this.simMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      wireframe: true,
-    });
+    const geo = new THREE.BufferGeometry();
+    let pos = new Float32Array(this.number * 3);
+    let uv = new Float32Array(this.number * 2);
+    for (let i = 0; i < this.size; i++) {
+      for (let j = 0; j < this.size; j++) {
+        const index = i * this.size + j;
+
+        pos[3 * index] = this.size * lerp(-0.5, 0.5, j / (this.size - 1));
+        pos[3 * index + 1] = this.size * lerp(-0.5, 0.5, i / (this.size - 1));
+        pos[3 * index + 2] = 0;
+
+        uv[2 * index] = j / (this.size - 1);
+        uv[2 * index + 1] = i / (this.size - 1);
+      }
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+
+    // geo.setDrawRange(3, 10);
+
     this.simMaterial = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        uMouse: { value: new THREE.Vector3(0, 0, 0) },
+        uMouse: { value: new THREE.Vector3(0) },
         uProgress: { value: 0 },
         uTime: { value: 0 },
+        uSource: { value: new THREE.Vector3(0) },
+        uRenderMode: { value: 0 },
         uCurrentPosition: { value: this.data1 },
-        uOriginalPosition: { value: this.data1 },
-        uOriginalPosition1: { value: this.data2 },
+        uDirections: { value: null },
       },
       vertexShader: simVertex,
-      fragmentShader: simFragmentPosition,
+      fragmentShader: simFragment,
     });
-    this.simMesh = new THREE.Mesh(geo, this.simMaterial);
+    this.simMesh = new THREE.Points(geo, this.simMaterial);
     this.sceneFBO.add(this.simMesh);
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+
+    this.directions = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+
+    this.initPos = new THREE.WebGLRenderTarget(this.size, this.size, {
       minFilter: THREE.NearestFilter,
       magFilter: THREE.NearestFilter,
       format: THREE.RGBAFormat,
@@ -407,89 +321,87 @@ export default class Sketch {
         positions[3 * index] = j / this.size - 0.5;
         positions[3 * index + 1] = i / this.size - 0.5;
         positions[3 * index + 2] = 0;
+
         uvs[2 * index] = j / (this.size - 1);
         uvs[2 * index + 1] = i / (this.size - 1);
       }
     }
     this.geometry.setAttribute(
-      "position",
+      'position',
       new THREE.BufferAttribute(positions, 3),
     );
-    this.geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    this.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 
     this.material = new THREE.MeshNormalMaterial();
-
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        // uTexture: { value: new THREE.TextureLoader().load(texture) },
         uTexture: { value: this.positions },
-        uVelocity: { value: null },
-        uMatcap: { value: new THREE.TextureLoader().load(matcap) },
       },
-      vertexShader: vertexShaderInstanced,
+      vertexShader: vertexShader,
       fragmentShader: fragmentShader,
-      // depthWrite: false,
-      // depthTest: false,
-      // transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      transparent: true,
     });
 
-    // this.mesh = new THREE.Points(this.geometry, this.material);
-    this.geometryInstanced = new THREE.BoxGeometry(0.01, 0.01, 0.01);
-    this.mesh = new THREE.InstancedMesh(
-      this.geometryInstanced,
-      this.material,
-      this.number,
-    );
-    let uvInstanced = new Float32Array(this.number * 2);
-    for (let i = 0; i < this.size; i++) {
-      for (let j = 0; j < this.size; j++) {
-        const index = i * this.size + j;
-        uvInstanced[2 * index] = j / (this.size - 1);
-        uvInstanced[2 * index + 1] = i / (this.size - 1);
-      }
-    }
-    this.geometryInstanced.setAttribute(
-      "uvRef",
-      new THREE.InstancedBufferAttribute(uvInstanced, 2),
-    );
+    this.mesh = new THREE.Points(this.geometry, this.material);
     this.scene.add(this.mesh);
+
+    this.debugPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        map: new THREE.TextureLoader().load(t1),
+      }),
+    );
+    this.scene.add(this.debugPlane);
   }
 
   render() {
     this.time += 0.05;
 
+    // ! raf loop으로부터 한번만 실행되길 원하는 코드
+    if (!this.init) {
+      this.init = true;
+      this.simMaterial.uniforms.uRenderMode.value = 1;
+      this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, -1, 0);
+
+      this.renderer.setRenderTarget(this.directions);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+      this.simMaterial.uniforms.uDirections.value = this.directions.texture;
+
+      this.simMaterial.uniforms.uRenderMode.value = 2;
+      this.renderer.setRenderTarget(this.initPos);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+    }
+
     this.material.uniforms.time.value = this.time;
 
-    // this.renderer.render(this.scene, this.camera);
-    // this.renderer.render(this.sceneFBO, this.cameraFBO);
+    // Simulate 렌더링
+    this.simMaterial.uniforms.uRenderMode.value = 0;
+    this.renderer.setRenderTarget(this.renderTarget);
+    this.renderer.render(this.sceneFBO, this.cameraFBO);
 
-    // this.renderer.setRenderTarget(this.renderTarget);
-    // this.renderer.render(this.sceneFBO, this.cameraFBO);
-
-    // this.renderer.setRenderTarget(null);
-    this.gpuCompute.compute();
+    // 실제 렌더링
+    this.renderer.setRenderTarget(null);
     this.renderer.render(this.scene, this.camera);
 
     // swap render targets
-    // const tmp = this.renderTarget;
-    // this.renderTarget = this.renderTarget1;
-    // this.renderTarget1 = tmp;
+    const tmp = this.renderTarget;
+    this.renderTarget = this.renderTarget1;
+    this.renderTarget1 = tmp;
 
-    this.material.uniforms.uTexture.value =
-      this.gpuCompute.getCurrentRenderTarget(this.positionVariable).texture;
-    this.material.uniforms.uVelocity.value =
-      this.gpuCompute.getCurrentRenderTarget(this.velocityVariable).texture;
-    this.positionUniforms.uTime.value = this.time;
+    this.material.uniforms.uTexture.value = this.renderTarget.texture;
+    this.simMaterial.uniforms.uCurrentPosition.value =
+      this.renderTarget1.texture;
+    this.simMaterial.uniforms.uTime.value = this.time;
 
-    // this.simMaterial.uniforms.uCurrentPosition.value =
-    // this.renderTarget1.texture;
-    // this.simMaterial.uniforms.uTime.value = this.time;
+    this.debugPlane.material.map = this.renderTarget.texture;
 
     window.requestAnimationFrame(this.render.bind(this));
   }
 }
 
-// new Sketch({
-// 	dom: document.getElementById("container"),
-// });
+new Sketch({
+  dom: document.getElementById('container'),
+});
