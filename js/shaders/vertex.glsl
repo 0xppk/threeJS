@@ -1,13 +1,14 @@
 varying vec2 vUv;
 uniform float time;
-
+varying float vLife;
 uniform sampler2D uTexture;
 
 void main() {
   vUv = uv;
   vec3 newpos = position;
-  vec4 color = texture2D(uTexture, vUv);
-  newpos.xyz = color.xyz;
+  vec4 simPosition = texture2D(uTexture, vUv);
+  newpos.xyz = simPosition.xyz;
+  vLife = simPosition.w;
   // newpos.x += 1.;
   // newpos.z += sin( time + position.x*10. ) * 0.5;
 
