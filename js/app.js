@@ -31,7 +31,8 @@ const loadImage = (path) => {
 
 export default class Sketch {
   constructor(options) {
-    this.size = 6;
+    this.init = false;
+    this.size = 64;
     this.number = this.size * this.size;
     this.container = options.dom;
     this.scene = new THREE.Scene();
@@ -70,7 +71,7 @@ export default class Sketch {
       this.data2 = this.getPointsOnSphere();
       this.getPixelDataFromImage(t1);
       this.mouseEvents();
-      this.setupFBO1();
+      this.setupFBO();
       this.addObjects();
       this.setupResize();
       this.render();
@@ -221,70 +222,6 @@ export default class Sketch {
 
     // create FBO scene
     this.sceneFBO = new THREE.Scene();
-    this.cameraFBO = new THREE.OrthographicCamera(-1, 1, 1, -1, -2, 2);
-    this.cameraFBO.position.z = 1;
-    this.cameraFBO.lookAt(new THREE.Vector3(0, 0, 0));
-
-    let geo = new THREE.PlaneGeometry(2, 2, 2, 2);
-    this.simMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      wireframe: true,
-    });
-    this.simMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        uMouse: { value: new THREE.Vector3(0, 0, 0) },
-        uProgress: { value: 0 },
-        uTime: { value: 0 },
-        uCurrentPosition: { value: this.data1 },
-        uOriginalPosition: { value: this.data1 },
-        uOriginalPosition1: { value: this.data2 },
-      },
-      vertexShader: simVertex,
-      fragmentShader: simFragment,
-    });
-    this.simMesh = new THREE.Mesh(geo, this.simMaterial);
-    this.sceneFBO.add(this.simMesh);
-
-    this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.FloatType,
-    });
-
-    this.renderTarget1 = new THREE.WebGLRenderTarget(this.size, this.size, {
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.FloatType,
-    });
-  }
-
-  setupFBO1() {
-    // create data Texture
-    const data = new Float32Array(4 * this.number);
-    for (let i = 0; i < this.size; i++) {
-      for (let j = 0; j < this.size; j++) {
-        const index = i * this.size + j;
-        data[4 * index] = lerp(-0.5, 0.5, j / (this.size - 1));
-        data[4 * index + 1] = lerp(-0.5, 0.5, i / (this.size - 1));
-        data[4 * index + 2] = 0;
-        data[4 * index + 3] = 1;
-      }
-    }
-
-    this.positions = new THREE.DataTexture(
-      data,
-      this.size,
-      this.size,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
-    this.positions.needsUpdate = true;
-
-    // create FBO scene
-    this.sceneFBO = new THREE.Scene();
     let viewArea = this.size / 2 + 0.01;
     this.cameraFBO = new THREE.OrthographicCamera(
       -viewArea,
@@ -295,10 +232,9 @@ export default class Sketch {
       2,
     );
     this.cameraFBO.position.z = 1;
-    this.cameraFBO.lookAt(new THREE.Vector3(0, 0, 0));
+    this.cameraFBO.lookAt(new THREE.Vector3(0));
 
-    let geo = new THREE.PlaneGeometry(2, 2, 2, 2);
-    this.geo = new THREE.BufferGeometry();
+    const geo = new THREE.BufferGeometry();
     let pos = new Float32Array(this.number * 3);
     let uv = new Float32Array(this.number * 2);
     for (let i = 0; i < this.size; i++) {
@@ -313,28 +249,43 @@ export default class Sketch {
         uv[2 * index + 1] = i / (this.size - 1);
       }
     }
-    this.geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    this.geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 
-    // this.geo.setDrawRange(3, 10);
+    // geo.setDrawRange(3, 10);
 
     this.simMaterial = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        uMouse: { value: new THREE.Vector3(0, 0, 0) },
+        uMouse: { value: new THREE.Vector3(0) },
         uProgress: { value: 0 },
         uTime: { value: 0 },
+        uSource: { value: new THREE.Vector3(0) },
+        uRenderMode: { value: 0 },
         uCurrentPosition: { value: this.data1 },
-        uOriginalPosition: { value: this.data1 },
-        uOriginalPosition1: { value: this.data2 },
+        uDirections: { value: null },
       },
       vertexShader: simVertex,
       fragmentShader: simFragment,
     });
-    this.simMesh = new THREE.Points(this.geo, this.simMaterial);
+    this.simMesh = new THREE.Points(geo, this.simMaterial);
     this.sceneFBO.add(this.simMesh);
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+
+    this.directions = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+
+    this.initPos = new THREE.WebGLRenderTarget(this.size, this.size, {
       minFilter: THREE.NearestFilter,
       magFilter: THREE.NearestFilter,
       format: THREE.RGBAFormat,
@@ -370,6 +321,7 @@ export default class Sketch {
         positions[3 * index] = j / this.size - 0.5;
         positions[3 * index + 1] = i / this.size - 0.5;
         positions[3 * index + 2] = 0;
+
         uvs[2 * index] = j / (this.size - 1);
         uvs[2 * index + 1] = i / (this.size - 1);
       }
@@ -381,11 +333,9 @@ export default class Sketch {
     this.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 
     this.material = new THREE.MeshNormalMaterial();
-
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        // uTexture: { value: new THREE.TextureLoader().load(texture) },
         uTexture: { value: this.positions },
       },
       vertexShader: vertexShader,
@@ -410,11 +360,29 @@ export default class Sketch {
   render() {
     this.time += 0.05;
 
+    // ! raf loop으로부터 한번만 실행되길 원하는 코드
+    if (!this.init) {
+      this.init = true;
+      this.simMaterial.uniforms.uRenderMode.value = 1;
+      this.simMaterial.uniforms.uSource.value = new THREE.Vector3(0, -1, 0);
+
+      this.renderer.setRenderTarget(this.directions);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+      this.simMaterial.uniforms.uDirections.value = this.directions.texture;
+
+      this.simMaterial.uniforms.uRenderMode.value = 2;
+      this.renderer.setRenderTarget(this.initPos);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+    }
+
     this.material.uniforms.time.value = this.time;
 
+    // Simulate 렌더링
+    this.simMaterial.uniforms.uRenderMode.value = 0;
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.sceneFBO, this.cameraFBO);
 
+    // 실제 렌더링
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.scene, this.camera);
 
