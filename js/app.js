@@ -9,9 +9,9 @@ import simFragment from './shaders/simFragment.glsl';
 import simVertex from './shaders/simVertex.glsl';
 import GUI from 'lil-gui';
 
-import t1 from '../asset/logo.png';
-import t2 from '../asset/super.png';
-import bird from '../asset/bird.glb?url';
+import t1 from '../assets/logo.png';
+import t2 from '../assets/super.png';
+import bird from '../assets/mesh.glb?url';
 
 function lerp(a, b, n) {
   return (1 - n) * a + n * b;
@@ -37,7 +37,7 @@ export default class Sketch {
     this.currentParticles = 0;
     this.v = new THREE.Vector3(0);
 
-    this.size = 64;
+    this.size = 512;
     this.number = this.size * this.size;
     this.container = options.dom;
     this.scene = new THREE.Scene();
@@ -60,7 +60,7 @@ export default class Sketch {
       70,
       this.width / this.height,
       0.01,
-      10,
+      100,
     );
     this.camera.position.z = 2;
 
@@ -80,7 +80,11 @@ export default class Sketch {
       this.model = model.scene;
       this.scene.add(this.model);
       this.model.traverse((mesh) => {
-        if (mesh.isMesh && mesh.name.includes('emitter')) {
+        // if (mesh.isMesh && mesh.name.includes('emitter')) {
+        if (
+          mesh.isMesh &&
+          mesh.geometry.attributes.position.array.length < 120
+        ) {
           this.emitters.push({
             mesh,
             prev: mesh.position.clone(),
@@ -438,6 +442,8 @@ export default class Sketch {
     this.renderer.autoClear = false;
     this.emitters.forEach((emitter) => {
       emitter.mesh.getWorldPosition(this.v);
+      this.v1 = this.v.clone();
+      let flip = Math.random() > 0.5;
 
       emitter.div = this.v.clone().sub(emitter.prev).multiplyScalar(100);
       this.geo.setDrawRange(this.currentParticles, emit);
@@ -446,13 +452,15 @@ export default class Sketch {
       this.simMaterial.uniforms.uRenderMode.value = 1;
       this.simMaterial.uniforms.uDirections.value = null;
       this.simMaterial.uniforms.uCurrentPosition.value = null;
+      if (flip) emitter.dir.x *= -1;
       this.simMaterial.uniforms.uSource.value = emitter.dir;
       this.renderer.setRenderTarget(this.directions);
       this.renderer.render(this.sceneFBO, this.cameraFBO);
 
       // POSITIONS
       this.simMaterial.uniforms.uRenderMode.value = 2;
-      this.simMaterial.uniforms.uSource.value = this.v;
+      if (flip) this.v1.x *= -1;
+      this.simMaterial.uniforms.uSource.value = this.v1;
       this.renderer.setRenderTarget(this.renderTarget);
       this.renderer.render(this.sceneFBO, this.cameraFBO);
 

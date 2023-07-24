@@ -16,25 +16,32 @@ void main() {
   vec3 position = texture2D(uCurrentPosition, vUv).xyz;
   vec4 direction = texture2D(uDirections, vUv);
 
-  float ran1 = rand(vUv) - 0.5;
-  float ran2 = rand(vUv + vec2(0.1, 0.1)) - 0.5;
-  float ran3 = rand(vUv + vec2(0.3, 0.3)) - 0.5;
+  if (uRenderMode == 0) {
+    float life = 1.0 - clamp((uTime - direction.a) / 15.0, 0.0, 1.0);
+    float speedlife = clamp(life, 0.1, 1.0);
+    position.xyz =
+      position.xyz +
+      speedlife * direction.xyz * 0.01 +
+      vec3(0.0, -1, 0.0) * 0.005 +
+      vec3(0.0, 0.0, -1.0) * -0.01;
 
-  switch (uRenderMode) {
-    case 0:
-      float life = 1.0 - clamp((uTime - direction.a) / 15.0, 0.0, 1.0);
-      float speedLife = clamp(life, 0.1, 1.0);
-      position.xyz +=
-        direction.xyz * 0.01 * speedLife +
-        vec3(0, -1, 0) * 0.005 +
-        vec3(0, 0, 1) * -0.05;
-      gl_FragColor = vec4(position, life);
-      break;
-    case 1: // Direction
-      gl_FragColor = vec4(uSource + vec3(ran1, ran2, ran3) * 0.5, uTime);
-      break;
-    case 2: // Position
-      gl_FragColor = vec4(uSource + vec3(ran1, ran2, ran3) * 0.1, 1.0);
-      break;
+    gl_FragColor = vec4(position, life);
   }
+
+  // DIRECTIONS
+  if (uRenderMode == 1) {
+    float rnd1 = rand(vUv) - 0.5;
+    float rnd2 = rand(vUv + vec2(0.1, 0.1)) - 0.5;
+    float rnd3 = rand(vUv + vec2(0.3, 0.3)) - 0.5;
+    gl_FragColor = vec4(uSource + vec3(rnd1, rnd2, rnd3) * 0.9, uTime);
+  }
+
+  // POSITIONS
+  if (uRenderMode == 2) {
+    float rnd1 = rand(vUv) - 0.5;
+    float rnd2 = rand(vUv + vec2(0.1, 0.1)) - 0.5;
+    float rnd3 = rand(vUv + vec2(0.3, 0.3)) - 0.5;
+    gl_FragColor = vec4(uSource + vec3(rnd1, rnd2, rnd3) * 0.9, 1.0);
+  }
+
 }
